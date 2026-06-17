@@ -1,10 +1,10 @@
-# Détection de Python (Airflow / ETL)
+# 1. On dit à GitHub d'ignorer complètement les dossiers système lourds d'Astro et Docker
+.astro/* linguist-vendored
+.astro_context/* linguist-vendored
+include/logs/* linguist-vendored
+logs/* linguist-vendored
+
+# 2. On force la détection de tes vrais fichiers de code
 *.py linguist-detectable=true
-
-# Détection de Docker (fichiers Dockerfile)
-Dockerfile linguist-detectable=true
-*docker-compose*.yml linguist-detectable=true
-*.dockerfile linguist-detectable=true
-
-# Détection du SQL (PostgreSQL)
 *.sql linguist-detectable=true
+Dockerfile linguist-detectable=true
