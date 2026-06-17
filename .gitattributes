@@ -1,0 +1,10 @@
+# Détection de Python (Airflow / ETL)
+*.py linguist-detectable=true
+
+# Détection de Docker (fichiers Dockerfile)
+Dockerfile linguist-detectable=true
+*docker-compose*.yml linguist-detectable=true
+*.dockerfile linguist-detectable=true
+
+# Détection du SQL (PostgreSQL)
+*.sql linguist-detectable=true
