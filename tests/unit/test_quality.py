@@ -75,3 +75,45 @@ def test_empty_batch_is_rejected():
     df = sample_data().iloc[:0]
     with pytest.raises(ValueError, match='vide'):
         data_quality_callable(df)
+
+
+def test_missing_country_stays_unknown():
+    df = sample_data()
+    df['country'] = None
+    result = transform_data_callable(df)
+    assert result.loc[0, 'country'] == 'unknown'
+    data_quality_callable(result)
+
+
+def test_invalid_signup_date_is_rejected():
+    df = sample_data()
+    df['signup_date'] = 'incorrect'
+    result = transform_data_callable(df)
+    assert pd.isna(result.loc[0, 'signup_date'])
+    with pytest.raises(ValueError, match='signup_date'):
+        data_quality_callable(result)
+
+
+def test_missing_signup_date_is_rejected():
+    df = sample_data()
+    df['signup_date'] = None
+    result = transform_data_callable(df)
+    with pytest.raises(ValueError, match='signup_date'):
+        data_quality_callable(result)
+
+
+def test_invalid_last_purchase_date_is_rejected():
+    df = sample_data()
+    df['last_purchase_date'] = 'incorrect'
+    result = transform_data_callable(df)
+    assert pd.isna(result.loc[0, 'last_purchase_date'])
+    with pytest.raises(ValueError, match='last_purchase_date'):
+        data_quality_callable(result)
+
+
+def test_missing_last_purchase_date_is_rejected():
+    df = sample_data()
+    df['last_purchase_date'] = None
+    result = transform_data_callable(df)
+    with pytest.raises(ValueError, match='last_purchase_date'):
+        data_quality_callable(result)

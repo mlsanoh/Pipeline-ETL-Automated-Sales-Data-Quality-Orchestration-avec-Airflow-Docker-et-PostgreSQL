@@ -2,11 +2,7 @@ import pandas as pd
 
 
 def transform_data_callable(df):
-    df = df.copy() 
-    df.shape
-    df.dtypes
-    df.isnull().sum()
-    df.head
+    df = df.copy()
 
     # Standarisation des colonnes
     df.columns = (
@@ -24,11 +20,11 @@ def transform_data_callable(df):
     # Convertir les montants en nombres sans inventer les valeurs manquantes.
     df['purchase_amount'] = pd.to_numeric(df['purchase_amount'], errors='coerce')
     
-        # Valeur categorielle
+    # Valeurs catégorielles manquantes
     cat_cols = ['gender', 'city']
     df[cat_cols] = df[cat_cols].fillna('unknown')
     
-    df['country'] = df['country'].fillna('india')
+    df['country'] = df['country'].fillna('unknown')
 
     # Les montants négatifs restent visibles pour le contrôle qualité.
 

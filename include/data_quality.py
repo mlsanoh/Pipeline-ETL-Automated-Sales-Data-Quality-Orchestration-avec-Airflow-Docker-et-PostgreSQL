@@ -34,6 +34,14 @@ def data_quality_callable(df):
         logger.error(f"Anomalie d'âge : {len(age_anomalies)} ligne(s) ont un âge manquant ou invalide (hors 0-120) !")
         raise ValueError("Des âges sortent de la plage autorisée.")
 
+    # Les dates non interprétables deviennent NaT pendant la transformation.
+    date_cols = ['signup_date', 'last_purchase_date']
+    for col in date_cols:
+        invalid_count = df[col].isna().sum()
+        if invalid_count > 0:
+            logger.error(f"La colonne '{col}' contient {invalid_count} date(s) manquante(s) ou invalide(s).")
+            raise ValueError(f"Dates manquantes ou invalides dans '{col}'.")
+
     # Vérification des valeurs cartegorielles 
     genres_autorises = ['M', 'F', 'unknown']
     genres_invalides = df[~df['gender'].isin(genres_autorises)]

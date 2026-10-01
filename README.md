@@ -80,7 +80,7 @@ Le projet suit une architecture modulaire stricte, isolant les tests d'intégrat
 - **Règles de Gestion Appliquées :** 
     - **Standardisation :** Passage des colonnes en minuscules, remplacement des espaces par des `_` et suppression des espaces aux extrémités (strip).
     - **Intégrité :** Suppression des lignes strictement identiques. Les lignes sans `customer_id` sont conservées jusqu'au contrôle qualité, qui bloque le lot.
-    - **Imputation :** Les montants manquants sont rejetés par le contrôle qualité. Les champs catégoriels gardent les règles de nettoyage du jeu de données initial (`'unknown'`, ou `'India'` pour le pays). Le pays par défaut est une hypothèse propre à ce jeu de données.
+    - **Valeurs manquantes :** Les montants manquants sont rejetés par le contrôle qualité. Les genres, villes et pays manquants deviennent `'unknown'` : aucun pays n'est attribué sans information source.
     - **Normalisation textuelle :** Uniformisation des genres (`male/m` $\rightarrow$ `M`) et nettoyage par Regex de la colonne age (ex: `"25 years"` $\rightarrow$ `25`). Les âges hors plage ou non interprétables sont rejetés par le contrôle qualité.
 
 ### 🛡️ 3. Étape de Validation Qualité (Data Quality)
@@ -91,6 +91,7 @@ Le projet suit une architecture modulaire stricte, isolant les tests d'intégrat
     - Absence d'une colonne obligatoire du schéma cible.
     - Présence de valeurs nulles sur les axes critiques (`customer_id`, `purchase_amount`).
     - Détection de montants financiers négatifs ou d'âges hors de la plage normale.
+    - Présence de dates manquantes ou non interprétables dans `signup_date` ou `last_purchase_date`.
 
 ### 💾 4. Étape de Chargement (Load)
 - **Fichier :** `include/load.py`
@@ -176,6 +177,11 @@ Les corrections empêchent la transformation de masquer les erreurs :
 - Un montant manquant n'est plus remplacé par la médiane.
 - Un âge invalide n'est plus remplacé par un âge médian.
 - Une ligne sans identifiant client est conservée jusqu'au contrôle bloquant.
+- Un pays manquant devient `unknown` et reste accepté.
+- Une date manquante ou incorrecte devient `NaT`, puis le contrôle qualité bloque le lot.
+
+Les expressions d'exploration inutilisées (`df.shape`, `df.dtypes`,
+`df.isnull().sum()`, `df.head`) sont retirées de la fonction de transformation.
 
 Exemple : un achat de `-30` reste `-30` après la transformation. La tâche de qualité
 échoue et la tâche de chargement ne démarre pas. Le lot doit être corrigé à la source
