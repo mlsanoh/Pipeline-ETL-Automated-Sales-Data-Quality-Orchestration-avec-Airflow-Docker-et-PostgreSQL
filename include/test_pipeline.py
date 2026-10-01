@@ -1,7 +1,7 @@
-from extract import extract_data_callable
-from transform import transform_data_callable
-from data_quality import data_quality_callable
-from load import load_data_callable
+from include.extract import extract_data_callable
+from include.transform import transform_data_callable
+from include.data_quality import data_quality_callable
+from include.load import load_data_callable
 
 
 def run_pipeline_test():

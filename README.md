@@ -6,13 +6,13 @@
 [![Database](https://img.shields.io/badge/Database-PostgreSQL-4169E1?style=flat-square&logo=PostgreSQL)](https://www.postgresql.org/)
 
 ## 📝 Présentation du Projet
-Ce projet implémente un pipeline **ETL (Extract, Transform, Load)** de production automatisé pour orchestrer et traiter les données de ventes d'une entreprise. Développé avec **Apache Airflow** (via l'écosystème **Astro CLI**), ce pipeline garantit l'extraction, le nettoyage complet, la validation stricte de la qualité des données (**Data Quality**) et le chargement final dans un entrepôt de données **PostgreSQL**.
+Ce projet implémente un pipeline **ETL (Extract, Transform, Load)** de démonstration automatisé pour orchestrer et traiter les données de ventes d'une entreprise. Développé avec **Apache Airflow** (via l'écosystème **Astro CLI**), ce pipeline réalise l'extraction, la normalisation, la validation de la qualité des données (**Data Quality**) et le chargement final dans un entrepôt de données **PostgreSQL**.
 
 L'objectif principal est de transformer des données brutes hétérogènes et potentiellement compromises (anomalies d'âge, montants négatifs, valeurs manquantes) en une source de vérité unique, propre et directement exploitable pour des outils de Business Intelligence (BI) ou des équipes Analytics.
 
 ---
 
-## 📸 Aperçu de la production (Airflow Dashboard)
+## 📸 Aperçu du pipeline (Airflow Dashboard)
 Voici le rendu visuel du pipeline ETL lorsqu'il s'exécute avec succès. Toutes les étapes (de l'extraction au chargement final dans le Data Warehouse) sont validées et au vert :
 
 ![Airflow Pipeline Success](image/capture_airflow.jpg) 
@@ -20,25 +20,16 @@ Voici le rendu visuel du pipeline ETL lorsqu'il s'exécute avec succès. Toutes 
 ---
 
 ## 🏗️ Architecture Globale & Flux de Données
-Le workflow est orchestré de manière séquentielle et résiliente, s'appuyant sur l'échange d'états en mémoire (**XComs**) d'Airflow et une base de données cible PostgreSQL isolée.
+Le DAG suit quatre tâches : **Extraction → Normalisation → Contrôle qualité → Chargement**.
+Les DataFrames intermédiaires sont enregistrés en Parquet sous `data/runs/<hash du run_id>/`.
+XCom ne transporte que le chemin du fichier. Le CSV brut est conservé, et les montants
+négatifs, les valeurs financières manquantes et les âges invalides ne sont pas corrigés
+silencieusement : le contrôle qualité compte les anomalies puis bloque le lot.
 
-[ Données Brutes (CSV) ]
-│
-▼
-
-EXTRACTION  ──► Importation du fichier source via chemins dynamiques
-│
-▼ (XCom)
-
-TRANSFORMATION ──► Nettoyage, typage, imputation & feature engineering
-│
-▼ (XCom)
-
-DATA QUALITY  ──► Pare-feu de conformité strict (Zéro tolérance aux anomalies)
-│
-▼ (XCom)
-
-CHARGEMENT   ──► Insertion optimisée par paquets (Bulk Insert) dans PostgreSQL
+Ce stockage local est adapté au `LocalExecutor` d'Astro. Pour plusieurs workers, définir
+`SALES_ARTIFACT_DIR` sur un volume partagé accessible à toutes les tâches, ou adapter le
+stockage à un object store. Les fichiers permettent la reprise ; leur rétention doit être
+configurée avant un usage durable.
 
 ---
 
@@ -79,9 +70,9 @@ Le projet suit une architecture modulaire stricte, isolant les tests d'intégrat
 - **Composant :** `transform_data_callable(df)`
 - **Règles de Gestion Appliquées :** 
     - **Standardisation :** Passage des colonnes en minuscules, remplacement des espaces par des `_` et suppression des espaces aux extrémités (strip).
-    - **Intégrité :** Suppression des doublons et des lignes sans `customer_id` 
-    - **Imputation :** Remplacement des montants manquants par la médiane et des données catégorielles vides par `'unknown'` ou `'India'`.
-    - **Normalisation textuelle :** Uniformisation des genres (`male/m` $\rightarrow$ `M`) et nettoyage par Regex de la colonne age (ex: `"25 years"` $\rightarrow$ `25`). Les âges aberrants ($<0$ ou $>120$) sont remplacés par la médiane de l'âge de la population valide.
+    - **Intégrité :** Suppression des lignes strictement identiques. Les identifiants absents ou dupliqués restent bloquants au contrôle qualité.
+    - **Imputation :** Seuls les champs textuels vides sont remplacés par `'unknown'`. Aucun montant ou pays n'est inventé.
+    - **Normalisation textuelle :** Uniformisation des genres (`male/m` $\rightarrow$ `M`) et nettoyage par Regex de la colonne age (ex: `"25 years"` $\rightarrow$ `25`). Les âges aberrants restent visibles et bloquent le chargement. Les dates non interprétables sont également rejetées.
 
 ### 🛡️ 3. Étape de Validation Qualité (Data Quality)
 
@@ -96,7 +87,10 @@ Le projet suit une architecture modulaire stricte, isolant les tests d'intégrat
 - **Fichier :** `include/load.py`
 - Composant : `load_data_callable(df)`
 - Moteur : `SQLAlchemy` avec le pilote `psycopg2`.
-- Charge les données nettoyées dans la table cible `sales_dwh`. L'insertion utilise l'argument `method='multi'` pour exécuter des insertions groupées par paquets (Bulk Insert), optimisant drastiquement les performances réseau et l'usage des ressources de la base de données.
+- Une table de staging reçoit le lot validé par paquets de 1 000 lignes. Un `INSERT ... ON CONFLICT (customer_id) DO UPDATE` met à jour `sales_dwh` dans la même transaction. La table cible et les clients absents du lot sont conservés ; un échec annule le chargement et la création du staging.
+- **Grain du jeu de données : une ligne d'état courant par client.** `customer_id` est la clé de cet UPSERT. Si la source contient plusieurs ventes par client, il faut un identifiant de vente stable avant d'utiliser ce chargement.
+- Sur une ancienne table contenant des `customer_id` dupliqués, la création de l'index unique échoue : réconcilier ces doublons avant de relancer. Aucun doublon n'est supprimé automatiquement.
+
 
 ## 🔒 Configuration & Sécurité
 
@@ -156,13 +150,25 @@ astro dev start
 
 ### Exécution des tests à l'intérieur du conteneur
 
-Pour valider le fonctionnement de votre code dans l'environnement exact de production, exécutez le script d'intégration directement dans le conteneur du Scheduler :
+Pour valider le fonctionnement de votre code dans l'environnement Astro, exécutez le script d'intégration directement dans le conteneur du Scheduler :
 
 ``` Bash 
 # 1. Entrer dans le conteneur
 astro dev bash --scheduler
 
 # 2. Lancer le script de test
-python include/test_pipeline.py
+python -m include.test_pipeline
 
 ```
+
+## Tests
+
+```bash
+python -m pytest tests/unit tests/integration -q
+# TEST_POSTGRES_URL active les tests PostgreSQL (base dédiée aux tests).
+# Dans Astro, les tests du DAG utilisent aussi Airflow :
+python -m pytest tests/dags -q
+```
+
+Les tests couvrent le rejet des anomalies, les fichiers Parquet, le rejeu sans doublons,
+la conservation des clients existants et le rollback après un échec d'insertion.
