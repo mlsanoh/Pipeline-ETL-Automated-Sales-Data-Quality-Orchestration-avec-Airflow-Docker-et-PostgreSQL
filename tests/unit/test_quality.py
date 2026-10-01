@@ -77,11 +77,11 @@ def test_empty_batch_is_rejected():
         data_quality_callable(df)
 
 
-def test_missing_country_stays_unknown():
+def test_missing_country_defaults_to_india():
     df = sample_data()
     df['country'] = None
     result = transform_data_callable(df)
-    assert result.loc[0, 'country'] == 'unknown'
+    assert result.loc[0, 'country'] == 'India'
     data_quality_callable(result)
 
 

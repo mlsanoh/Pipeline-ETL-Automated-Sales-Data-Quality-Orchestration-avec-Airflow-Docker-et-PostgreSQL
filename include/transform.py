@@ -24,7 +24,8 @@ def transform_data_callable(df):
     cat_cols = ['gender', 'city']
     df[cat_cols] = df[cat_cols].fillna('unknown')
     
-    df['country'] = df['country'].fillna('unknown')
+    # Pour ce jeu de données indien, un pays manquant est supposé être l'Inde.
+    df['country'] = df['country'].fillna('india')
 
     # Les montants négatifs restent visibles pour le contrôle qualité.
 

@@ -80,7 +80,7 @@ Le projet suit une architecture modulaire stricte, isolant les tests d'intégrat
 - **Règles de Gestion Appliquées :** 
     - **Standardisation :** Passage des colonnes en minuscules, remplacement des espaces par des `_` et suppression des espaces aux extrémités (strip).
     - **Intégrité :** Suppression des lignes strictement identiques. Les lignes sans `customer_id` sont conservées jusqu'au contrôle qualité, qui bloque le lot.
-    - **Valeurs manquantes :** Les montants manquants sont rejetés par le contrôle qualité. Les genres, villes et pays manquants deviennent `'unknown'` : aucun pays n'est attribué sans information source.
+    - **Valeurs manquantes :** Les montants manquants sont rejetés par le contrôle qualité. Les genres et villes manquants deviennent `'unknown'`. Pour ce jeu de données décrit comme provenant de l'Inde, un pays manquant est complété par `'India'`, avec l'hypothèse que les clients concernés sont en Inde. Les pays déjà renseignés restent normalisés selon la valeur source.
     - **Normalisation textuelle :** Uniformisation des genres (`male/m` $\rightarrow$ `M`) et nettoyage par Regex de la colonne age (ex: `"25 years"` $\rightarrow$ `25`). Les âges hors plage ou non interprétables sont rejetés par le contrôle qualité.
 
 ### 🛡️ 3. Étape de Validation Qualité (Data Quality)
@@ -177,7 +177,7 @@ Les corrections empêchent la transformation de masquer les erreurs :
 - Un montant manquant n'est plus remplacé par la médiane.
 - Un âge invalide n'est plus remplacé par un âge médian.
 - Une ligne sans identifiant client est conservée jusqu'au contrôle bloquant.
-- Un pays manquant devient `unknown` et reste accepté.
+- Un pays manquant devient `India`, selon l'hypothèse métier propre à ce jeu de données indien.
 - Une date manquante ou incorrecte devient `NaT`, puis le contrôle qualité bloque le lot.
 
 Les expressions d'exploration inutilisées (`df.shape`, `df.dtypes`,
