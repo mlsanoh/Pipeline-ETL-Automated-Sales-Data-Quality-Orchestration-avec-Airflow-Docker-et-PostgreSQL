@@ -6,7 +6,7 @@
 [![Database](https://img.shields.io/badge/Database-PostgreSQL-4169E1?style=flat-square&logo=PostgreSQL)](https://www.postgresql.org/)
 
 ## 📝 Présentation du Projet
-Ce projet implémente un pipeline **ETL (Extract, Transform, Load)** de démonstration automatisé pour orchestrer et traiter les données de ventes d'une entreprise. Développé avec **Apache Airflow** (via l'écosystème **Astro CLI**), ce pipeline réalise l'extraction, la normalisation, la validation de la qualité des données (**Data Quality**) et le chargement final dans un entrepôt de données **PostgreSQL**.
+Ce projet implémente un pipeline **ETL (Extract, Transform, Load)** de démonstration automatisé pour orchestrer et traiter les données de ventes d'une entreprise. Développé avec **Apache Airflow** (via l'écosystème **Astro CLI**), ce pipeline réalise l'extraction, le nettoyage et la validation de la qualité des données (**Data Quality**) et le chargement final dans un entrepôt de données **PostgreSQL**.
 
 L'objectif principal est de transformer des données brutes hétérogènes et potentiellement compromises (anomalies d'âge, montants négatifs, valeurs manquantes) en une source de vérité unique, propre et directement exploitable pour des outils de Business Intelligence (BI) ou des équipes Analytics.
 
@@ -20,16 +20,25 @@ Voici le rendu visuel du pipeline ETL lorsqu'il s'exécute avec succès. Toutes 
 ---
 
 ## 🏗️ Architecture Globale & Flux de Données
-Le DAG suit quatre tâches : **Extraction → Normalisation → Contrôle qualité → Chargement**.
-Les DataFrames intermédiaires sont enregistrés en Parquet sous `data/runs/<hash du run_id>/`.
-XCom ne transporte que le chemin du fichier. Le CSV brut est conservé, et les montants
-négatifs, les valeurs financières manquantes et les âges invalides ne sont pas corrigés
-silencieusement : le contrôle qualité compte les anomalies puis bloque le lot.
+Le workflow est orchestré de manière séquentielle et résiliente, s'appuyant sur l'échange d'états en mémoire (**XComs**) d'Airflow et une base de données cible PostgreSQL isolée.
 
-Ce stockage local est adapté au `LocalExecutor` d'Astro. Pour plusieurs workers, définir
-`SALES_ARTIFACT_DIR` sur un volume partagé accessible à toutes les tâches, ou adapter le
-stockage à un object store. Les fichiers permettent la reprise ; leur rétention doit être
-configurée avant un usage durable.
+[ Données Brutes (CSV) ]
+│
+▼
+
+EXTRACTION  ──► Importation du fichier source via chemins dynamiques
+│
+▼ (XCom)
+
+TRANSFORMATION ──► Nettoyage, typage, imputation & feature engineering
+│
+▼ (XCom)
+
+DATA QUALITY  ──► Pare-feu de conformité strict (Zéro tolérance aux anomalies)
+│
+▼ (XCom)
+
+CHARGEMENT   ──► Insertion optimisée par paquets (Bulk Insert) dans PostgreSQL
 
 ---
 
@@ -70,9 +79,9 @@ Le projet suit une architecture modulaire stricte, isolant les tests d'intégrat
 - **Composant :** `transform_data_callable(df)`
 - **Règles de Gestion Appliquées :** 
     - **Standardisation :** Passage des colonnes en minuscules, remplacement des espaces par des `_` et suppression des espaces aux extrémités (strip).
-    - **Intégrité :** Suppression des lignes strictement identiques. Les identifiants absents ou dupliqués restent bloquants au contrôle qualité.
-    - **Imputation :** Seuls les champs textuels vides sont remplacés par `'unknown'`. Aucun montant ou pays n'est inventé.
-    - **Normalisation textuelle :** Uniformisation des genres (`male/m` $\rightarrow$ `M`) et nettoyage par Regex de la colonne age (ex: `"25 years"` $\rightarrow$ `25`). Les âges aberrants restent visibles et bloquent le chargement. Les dates non interprétables sont également rejetées.
+    - **Intégrité :** Suppression des lignes strictement identiques. Les lignes sans `customer_id` sont conservées jusqu'au contrôle qualité, qui bloque le lot.
+    - **Imputation :** Les montants manquants sont rejetés par le contrôle qualité. Les champs catégoriels gardent les règles de nettoyage du jeu de données initial (`'unknown'`, ou `'India'` pour le pays). Le pays par défaut est une hypothèse propre à ce jeu de données.
+    - **Normalisation textuelle :** Uniformisation des genres (`male/m` $\rightarrow$ `M`) et nettoyage par Regex de la colonne age (ex: `"25 years"` $\rightarrow$ `25`). Les âges hors plage ou non interprétables sont rejetés par le contrôle qualité.
 
 ### 🛡️ 3. Étape de Validation Qualité (Data Quality)
 
@@ -87,10 +96,7 @@ Le projet suit une architecture modulaire stricte, isolant les tests d'intégrat
 - **Fichier :** `include/load.py`
 - Composant : `load_data_callable(df)`
 - Moteur : `SQLAlchemy` avec le pilote `psycopg2`.
-- Une table de staging reçoit le lot validé par paquets de 1 000 lignes. Un `INSERT ... ON CONFLICT (customer_id) DO UPDATE` met à jour `sales_dwh` dans la même transaction. La table cible et les clients absents du lot sont conservés ; un échec annule le chargement et la création du staging.
-- **Grain du jeu de données : une ligne d'état courant par client.** `customer_id` est la clé de cet UPSERT. Si la source contient plusieurs ventes par client, il faut un identifiant de vente stable avant d'utiliser ce chargement.
-- Sur une ancienne table contenant des `customer_id` dupliqués, la création de l'index unique échoue : réconcilier ces doublons avant de relancer. Aucun doublon n'est supprimé automatiquement.
-
+- Charge les données nettoyées dans la table cible `sales_dwh`. L'insertion utilise l'argument `method='multi'` pour exécuter des insertions groupées par paquets (Bulk Insert), optimisant drastiquement les performances réseau et l'usage des ressources de la base de données.
 
 ## 🔒 Configuration & Sécurité
 
@@ -160,15 +166,33 @@ astro dev bash --scheduler
 python -m include.test_pipeline
 
 ```
+## Corrections et limites de cette version
 
-## Tests
+Le projet conserve ses quatre tâches Airflow et la transmission des DataFrames via
+XCom. Cette organisation sert ici à comprendre l'ETL sur un petit jeu de données.
+
+Les corrections empêchent la transformation de masquer les erreurs :
+- Un montant négatif reste négatif, puis le contrôle qualité lève une erreur.
+- Un montant manquant n'est plus remplacé par la médiane.
+- Un âge invalide n'est plus remplacé par un âge médian.
+- Une ligne sans identifiant client est conservée jusqu'au contrôle bloquant.
+
+Exemple : un achat de `-30` reste `-30` après la transformation. La tâche de qualité
+échoue et la tâche de chargement ne démarre pas. Le lot doit être corrigé à la source
+avant une nouvelle exécution.
+
+Le chargement reste un **full refresh** : `if_exists='replace'` remplace le contenu
+et la structure de `sales_dwh` à chaque exécution. Utiliser une table dédiée à cette
+démonstration. La transmission de DataFrames via XCom reste adaptée à ce petit
+exercice ; une évolution du stockage intermédiaire pourra être étudiée séparément.
+
+### Tests de régression
 
 ```bash
-python -m pytest tests/unit tests/integration -q
-# TEST_POSTGRES_URL active les tests PostgreSQL (base dédiée aux tests).
-# Dans Astro, les tests du DAG utilisent aussi Airflow :
+python -m pytest tests/unit -q
+# Dans Astro, où Airflow est installé :
 python -m pytest tests/dags -q
 ```
 
-Les tests couvrent le rejet des anomalies, les fichiers Parquet, le rejeu sans doublons,
-la conservation des clients existants et le rollback après un échec d'insertion.
+Chaque test vérifie un cas simple. `with pytest.raises(ValueError)` signifie :
+« le contrôle doit lever une erreur pour cette donnée invalide ».

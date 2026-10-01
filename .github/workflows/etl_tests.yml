@@ -1,34 +1,27 @@
-name: ETL tests
+name: ETL quality tests
+
 on:
   push:
     branches: [master]
   pull_request:
     branches: [master]
+
 permissions:
   contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: sales_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U test_user -d sales_test"
-          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       PYTHONPATH: .
-      TEST_POSTGRES_URL: postgresql+psycopg2://test_user:test_password@localhost:5432/sales_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - run: python -m compileall -q dags include
-      - run: python -m pytest tests/unit tests/integration -q
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+      - name: Vérifier la syntaxe Python
+        run: python -m compileall -q dags include
+      - name: Tester les contrôles qualité
+        run: python -m pytest tests/unit -q

@@ -1,21 +1,16 @@
 import os
-from pathlib import Path
 from dotenv import load_dotenv
-from sqlalchemy.engine import URL
 
 load_dotenv()
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_PATH = Path(os.getenv('SALES_DATA_PATH', str(BASE_DIR / 'data' / 'sales_data.csv')))
-ARTIFACT_DIR = Path(os.getenv('SALES_ARTIFACT_DIR', str(BASE_DIR / 'data' / 'runs')))
 
+DB_HOST = os.getenv("PostgreSQL_HOST")
+DB_USER = os.getenv("PostgreSQL_USER")
+DB_PASSWORD = os.getenv("PostgreSQL_PASSWORD")
+DB_PORT = os.getenv("PostgreSQL_PORT")
+DB_NAME = os.getenv("PostgreSQL_DATABASE")
 
-def postgres_url():
-    required = ['PostgreSQL_HOST', 'PostgreSQL_USER', 'PostgreSQL_PASSWORD', 'PostgreSQL_DATABASE']
-    missing = [name for name in required if not os.getenv(name)]
-    if missing:
-        raise ValueError(f'Configuration PostgreSQL incomplète : {missing}')
-    return URL.create(
-        'postgresql+psycopg2', username=os.environ['PostgreSQL_USER'],
-        password=os.environ['PostgreSQL_PASSWORD'], host=os.environ['PostgreSQL_HOST'],
-        port=int(os.getenv('PostgreSQL_PORT', '5432')), database=os.environ['PostgreSQL_DATABASE'],
-    )
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_PATH = os.path.join(BASE_DIR, "data", "sales_data.csv")
+
+# La chaîne de connexion PostgreSQL
+PostgreSQL_CONN = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"

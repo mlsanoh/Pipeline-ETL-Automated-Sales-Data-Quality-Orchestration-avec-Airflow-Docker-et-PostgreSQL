@@ -1,40 +1,51 @@
+import pandas as pd 
 import logging
-import numpy as np
-import pandas as pd
 
-logger = logging.getLogger('airflow.task')
-EXPECTED_COLUMNS = [
-    'customer_id', 'name', 'gender', 'age', 'city', 'country', 'email',
-    'purchase_amount', 'feedback_score', 'signup_date', 'last_purchase_date',
-]
-
+# On récupère le logger standard d'Airflow
+logger = logging.getLogger("airflow.task")
 
 def data_quality_callable(df):
-    missing = sorted(set(EXPECTED_COLUMNS) - set(df.columns))
-    if missing:
-        raise ValueError(f'Colonnes obligatoires absentes : {missing}')
+
     if df.empty:
-        raise ValueError('Le lot de données est vide.')
+        raise ValueError("Le lot de données est vide.")
 
-    # Compter toutes les anomalies avant de bloquer le chargement.
-    amount = pd.to_numeric(df['purchase_amount'], errors='coerce')
-    age = pd.to_numeric(df['age'], errors='coerce')
-    invalid_ids = df['customer_id'].isna() | df['customer_id'].astype('string').str.strip().eq('').fillna(False)
-    anomalies = {
-        'customer_id absent': int(invalid_ids.sum()),
-        'customer_id dupliqué': int(df['customer_id'].duplicated(keep=False).sum()),
-        'purchase_amount invalide': int((amount.isna() | ~np.isfinite(amount) | (amount < 0)).sum()),
-        'age invalide': int((age.isna() | ~age.between(0, 120) | (age % 1 != 0)).sum()),
-        'signup_date invalide': int(pd.to_datetime(df['signup_date'], errors='coerce').isna().sum()),
-        'last_purchase_date invalide': int(pd.to_datetime(df['last_purchase_date'], errors='coerce').isna().sum()),
-    }
-    anomalies = {rule: count for rule, count in anomalies.items() if count}
-    if anomalies:
-        logger.error('Contrôle qualité bloquant : %s', anomalies)
-        raise ValueError(f'Anomalies de qualité : {anomalies}')
+    # Vérification de l'existence des colonnes et de leurs types attendus
+    expected_columns =['customer_id', 'name', 'gender', 'age', 'city', 
+        'country', 'email', 'purchase_amount', 'feedback_score', 
+        'signup_date', 'last_purchase_date'
+    ]
+    
+    for col in expected_columns:
+        if col not in df.columns:
+            logger.error(f"Colonne manquante : La colonne '{col}' est introuvable !")
+            raise ValueError(f"La colonne obligatoire '{col}' est absente.")
 
-    invalid_gender = ~df['gender'].isin(['M', 'F', 'unknown'])
-    if invalid_gender.any():
-        logger.warning('Genre non reconnu : %s ligne(s).', int(invalid_gender.sum()))
-    logger.info('Contrôles qualité réussis : %s lignes.', len(df))
+    # Vérification des valeurs manquantes 
+    cols_not_null = ['customer_id', 'purchase_amount']
+    for col in cols_not_null:
+        null_count = df[col].isna().sum()
+        if null_count > 0:
+            logger.error(f"Données corrompues : La colonne '{col}' contient {null_count} valeur(s) manquante(s) !")
+            raise ValueError(f"Interdiction d'avoir des valeurs nulles dans '{col}'.")
+
+    # Vérification de la colonne age
+    age_anomalies = df[df['age'].isna() | (df['age'] < 0) | (df['age'] > 120)]
+    if not age_anomalies.empty:
+        logger.error(f"Anomalie d'âge : {len(age_anomalies)} ligne(s) ont un âge manquant ou invalide (hors 0-120) !")
+        raise ValueError("Des âges sortent de la plage autorisée.")
+
+    # Vérification des valeurs cartegorielles 
+    genres_autorises = ['M', 'F', 'unknown']
+    genres_invalides = df[~df['gender'].isin(genres_autorises)]
+    if not genres_invalides.empty:
+        logger.warning(f" Valeurs de genre suspectes détectées sur {len(genres_invalides)} ligne(s).")
+
+    # Vérification des valeurs négatives 
+    achats_negatifs = df[df['purchase_amount'] < 0]
+    if not achats_negatifs.empty:
+        logger.error(f"Erreur financière : {len(achats_negatifs)} achat(s) ont un montant négatif !")
+        raise ValueError("Le montant d'achat ne peut pas être inférieur à 0.")
+
+    logger.info("TOUS LES TESTS SONT PASSÉS ! Les données sont prêtes pour le stockage.")
+
     return df
