@@ -6,6 +6,9 @@ logger = logging.getLogger("airflow.task")
 
 def data_quality_callable(df):
 
+    if df.empty:
+        raise ValueError("Le lot de données est vide.")
+
     # Vérification de l'existence des colonnes et de leurs types attendus
     expected_columns =['customer_id', 'name', 'gender', 'age', 'city', 
         'country', 'email', 'purchase_amount', 'feedback_score', 
@@ -26,10 +29,18 @@ def data_quality_callable(df):
             raise ValueError(f"Interdiction d'avoir des valeurs nulles dans '{col}'.")
 
     # Vérification de la colonne age
-    age_anomalies = df[(df['age'] < 0) | (df['age'] > 120)]
+    age_anomalies = df[df['age'].isna() | (df['age'] < 0) | (df['age'] > 120)]
     if not age_anomalies.empty:
-        logger.error(f"Anomalie d'âge : {len(age_anomalies)} ligne(s) ont un âge invalide (hors 0-120) !")
+        logger.error(f"Anomalie d'âge : {len(age_anomalies)} ligne(s) ont un âge manquant ou invalide (hors 0-120) !")
         raise ValueError("Des âges sortent de la plage autorisée.")
+
+    # Les dates non interprétables deviennent NaT pendant la transformation.
+    date_cols = ['signup_date', 'last_purchase_date']
+    for col in date_cols:
+        invalid_count = df[col].isna().sum()
+        if invalid_count > 0:
+            logger.error(f"La colonne '{col}' contient {invalid_count} date(s) manquante(s) ou invalide(s).")
+            raise ValueError(f"Dates manquantes ou invalides dans '{col}'.")
 
     # Vérification des valeurs cartegorielles 
     genres_autorises = ['M', 'F', 'unknown']

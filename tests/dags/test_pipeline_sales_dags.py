@@ -22,11 +22,11 @@ def test_pipeline_sales_dags_config():
     assert len(dag.tasks) == 4, f"Le DAG devrait avoir 4 tâches, il en a {len(dag.tasks)}"
     
     # Vérification de l'enchaînement des tâches
-    extract_task = dag.get_task("extract_data")
-    transform_task = dag.get_task("transform_data")
-    data_quality_task = dag.get_task("data_quality")
-    load_task = dag.get_task("load_data")
+    extract_task = dag.get_task("extract_task")
+    transform_task = dag.get_task("transform_task")
+    data_quality_task = dag.get_task("data_quality_task")
+    load_task = dag.get_task("load_task")
 
     assert transform_task in extract_task.downstream_list
     assert data_quality_task in transform_task.downstream_list
-    assert load_task in data_quality_task.downstream_list        
+    assert load_task in data_quality_task.downstream_list

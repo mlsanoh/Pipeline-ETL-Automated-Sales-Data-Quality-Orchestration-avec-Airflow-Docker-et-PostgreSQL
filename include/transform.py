@@ -2,39 +2,32 @@ import pandas as pd
 
 
 def transform_data_callable(df):
-    df = df.copy() 
-    df.shape
-    df.dtypes
-    df.isnull().sum()
-    df.head
+    df = df.copy()
 
     # Standarisation des colonnes
     df.columns = (
         df.columns
+        .str.strip()
         .str.replace(' ', '_')
         .str.lower()
-        .str.strip()
     )
     
-    # Gardons uniquement les lignes où customer_id n'est pas vide
-    df = df[df['customer_id'].notna()]
+    # Les identifiants absents seront détectés par le contrôle qualité.
 
     # Suppression des doublons
     df = df.drop_duplicates()
 
-    # Remplacement des valeurs manquantes
-        # Valeur numerique
-    for col in ['purchase_amount']:
-        df[col] = df[col].fillna(df[col].median())
+    # Convertir les montants en nombres sans inventer les valeurs manquantes.
+    df['purchase_amount'] = pd.to_numeric(df['purchase_amount'], errors='coerce')
     
-        # Valeur categorielle
+    # Valeurs catégorielles manquantes
     cat_cols = ['gender', 'city']
     df[cat_cols] = df[cat_cols].fillna('unknown')
     
+    # Pour ce jeu de données indien, un pays manquant est supposé être l'Inde.
     df['country'] = df['country'].fillna('india')
 
-    # Convertir les montants négatifs en positifs (valeur absolue)
-    df['purchase_amount'] = df['purchase_amount'].abs()
+    # Les montants négatifs restent visibles pour le contrôle qualité.
 
     # Normalisation des colonnes 
     for col in ['gender', 'country']:
@@ -66,10 +59,7 @@ def transform_data_callable(df):
     )
 
     df['age'] = pd.to_numeric(df['age'], errors='coerce')
-    df['age'] = df['age'].astype('Int64')
-    # Remplacer les valeurs < 0 et > 120 par la médiane
-    age_median = int(df[(df['age'] >= 0) & (df['age'] <= 120)]['age'].median())
-    df.loc[(df['age'] < 0) | (df['age'] > 120), 'age'] = int(age_median)
+    # Les âges invalides restent visibles pour le contrôle qualité.
 
     # Modification des types dates
     df['signup_date'] = pd.to_datetime(df['signup_date'], errors='coerce')

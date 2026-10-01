@@ -6,13 +6,13 @@
 [![Database](https://img.shields.io/badge/Database-PostgreSQL-4169E1?style=flat-square&logo=PostgreSQL)](https://www.postgresql.org/)
 
 ## 📝 Présentation du Projet
-Ce projet implémente un pipeline **ETL (Extract, Transform, Load)** de production automatisé pour orchestrer et traiter les données de ventes d'une entreprise. Développé avec **Apache Airflow** (via l'écosystème **Astro CLI**), ce pipeline garantit l'extraction, le nettoyage complet, la validation stricte de la qualité des données (**Data Quality**) et le chargement final dans un entrepôt de données **PostgreSQL**.
+Ce projet implémente un pipeline **ETL (Extract, Transform, Load)** de démonstration automatisé pour orchestrer et traiter les données de ventes d'une entreprise. Développé avec **Apache Airflow** (via l'écosystème **Astro CLI**), ce pipeline réalise l'extraction, le nettoyage et la validation de la qualité des données (**Data Quality**) et le chargement final dans un entrepôt de données **PostgreSQL**.
 
 L'objectif principal est de transformer des données brutes hétérogènes et potentiellement compromises (anomalies d'âge, montants négatifs, valeurs manquantes) en une source de vérité unique, propre et directement exploitable pour des outils de Business Intelligence (BI) ou des équipes Analytics.
 
 ---
 
-## 📸 Aperçu de la production (Airflow Dashboard)
+## 📸 Aperçu du pipeline (Airflow Dashboard)
 Voici le rendu visuel du pipeline ETL lorsqu'il s'exécute avec succès. Toutes les étapes (de l'extraction au chargement final dans le Data Warehouse) sont validées et au vert :
 
 ![Airflow Pipeline Success](image/capture_airflow.jpg) 
@@ -79,9 +79,9 @@ Le projet suit une architecture modulaire stricte, isolant les tests d'intégrat
 - **Composant :** `transform_data_callable(df)`
 - **Règles de Gestion Appliquées :** 
     - **Standardisation :** Passage des colonnes en minuscules, remplacement des espaces par des `_` et suppression des espaces aux extrémités (strip).
-    - **Intégrité :** Suppression des doublons et des lignes sans `customer_id` 
-    - **Imputation :** Remplacement des montants manquants par la médiane et des données catégorielles vides par `'unknown'` ou `'India'`.
-    - **Normalisation textuelle :** Uniformisation des genres (`male/m` $\rightarrow$ `M`) et nettoyage par Regex de la colonne age (ex: `"25 years"` $\rightarrow$ `25`). Les âges aberrants ($<0$ ou $>120$) sont remplacés par la médiane de l'âge de la population valide.
+    - **Intégrité :** Suppression des lignes strictement identiques. Les lignes sans `customer_id` sont conservées jusqu'au contrôle qualité, qui bloque le lot.
+    - **Valeurs manquantes :** Les montants manquants sont rejetés par le contrôle qualité. Les genres et villes manquants deviennent `'unknown'`. Pour ce jeu de données décrit comme provenant de l'Inde, un pays manquant est complété par `'India'`, avec l'hypothèse que les clients concernés sont en Inde. Les pays déjà renseignés restent normalisés selon la valeur source.
+    - **Normalisation textuelle :** Uniformisation des genres (`male/m` $\rightarrow$ `M`) et nettoyage par Regex de la colonne age (ex: `"25 years"` $\rightarrow$ `25`). Les âges hors plage ou non interprétables sont rejetés par le contrôle qualité.
 
 ### 🛡️ 3. Étape de Validation Qualité (Data Quality)
 
@@ -91,6 +91,7 @@ Le projet suit une architecture modulaire stricte, isolant les tests d'intégrat
     - Absence d'une colonne obligatoire du schéma cible.
     - Présence de valeurs nulles sur les axes critiques (`customer_id`, `purchase_amount`).
     - Détection de montants financiers négatifs ou d'âges hors de la plage normale.
+    - Présence de dates manquantes ou non interprétables dans `signup_date` ou `last_purchase_date`.
 
 ### 💾 4. Étape de Chargement (Load)
 - **Fichier :** `include/load.py`
@@ -156,13 +157,48 @@ astro dev start
 
 ### Exécution des tests à l'intérieur du conteneur
 
-Pour valider le fonctionnement de votre code dans l'environnement exact de production, exécutez le script d'intégration directement dans le conteneur du Scheduler :
+Pour valider le fonctionnement de votre code dans l'environnement Astro, exécutez le script d'intégration directement dans le conteneur du Scheduler :
 
 ``` Bash 
 # 1. Entrer dans le conteneur
 astro dev bash --scheduler
 
 # 2. Lancer le script de test
-python include/test_pipeline.py
+python -m include.test_pipeline
 
 ```
+## Corrections et limites de cette version
+
+Le projet conserve ses quatre tâches Airflow et la transmission des DataFrames via
+XCom. Cette organisation sert ici à comprendre l'ETL sur un petit jeu de données.
+
+Les corrections empêchent la transformation de masquer les erreurs :
+- Un montant négatif reste négatif, puis le contrôle qualité lève une erreur.
+- Un montant manquant n'est plus remplacé par la médiane.
+- Un âge invalide n'est plus remplacé par un âge médian.
+- Une ligne sans identifiant client est conservée jusqu'au contrôle bloquant.
+- Un pays manquant devient `India`, selon l'hypothèse métier propre à ce jeu de données indien.
+- Une date manquante ou incorrecte devient `NaT`, puis le contrôle qualité bloque le lot.
+
+Les expressions d'exploration inutilisées (`df.shape`, `df.dtypes`,
+`df.isnull().sum()`, `df.head`) sont retirées de la fonction de transformation.
+
+Exemple : un achat de `-30` reste `-30` après la transformation. La tâche de qualité
+échoue et la tâche de chargement ne démarre pas. Le lot doit être corrigé à la source
+avant une nouvelle exécution.
+
+Le chargement reste un **full refresh** : `if_exists='replace'` remplace le contenu
+et la structure de `sales_dwh` à chaque exécution. Utiliser une table dédiée à cette
+démonstration. La transmission de DataFrames via XCom reste adaptée à ce petit
+exercice ; une évolution du stockage intermédiaire pourra être étudiée séparément.
+
+### Tests de régression
+
+```bash
+python -m pytest tests/unit -q
+# Dans Astro, où Airflow est installé :
+python -m pytest tests/dags -q
+```
+
+Chaque test vérifie un cas simple. `with pytest.raises(ValueError)` signifie :
+« le contrôle doit lever une erreur pour cette donnée invalide ».

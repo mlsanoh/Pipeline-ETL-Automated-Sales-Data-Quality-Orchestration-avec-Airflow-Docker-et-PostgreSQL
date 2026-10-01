@@ -12,5 +12,5 @@ DB_NAME = os.getenv("PostgreSQL_DATABASE")
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_PATH = os.path.join(BASE_DIR, "data", "sales_data.csv")
 
-# La chaîne de connexion MySQL
+# La chaîne de connexion PostgreSQL
 PostgreSQL_CONN = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"

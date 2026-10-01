@@ -5,11 +5,11 @@ from include.config import PostgreSQL_CONN
 def load_data_callable (df):
     print("Connexion à PostgreSQL")
 
-    # Création du moteur SQLAlchemy pour MySQL
+    # Création du moteur SQLAlchemy pour PostgreSQL
     engine = create_engine(PostgreSQL_CONN)
 
     try:
-        # Envoi des données dans MySQL
+        # Envoi des données dans PostgreSQL
         df.to_sql(
             name='sales_dwh', 
             con=engine, 

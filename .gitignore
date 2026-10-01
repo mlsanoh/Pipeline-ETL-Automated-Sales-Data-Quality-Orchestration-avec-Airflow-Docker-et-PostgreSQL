@@ -11,3 +11,4 @@ webserver_config.py
 airflow.cfg
 airflow.db
 *.csv
+.pytest_cache/

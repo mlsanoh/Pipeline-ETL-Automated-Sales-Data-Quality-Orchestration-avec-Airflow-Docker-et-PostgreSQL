@@ -1,0 +1,27 @@
+name: ETL quality tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+      - name: Vérifier la syntaxe Python
+        run: python -m compileall -q dags include
+      - name: Tester les contrôles qualité
+        run: python -m pytest tests/unit -q
